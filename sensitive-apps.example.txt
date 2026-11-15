@@ -1,0 +1,30 @@
+﻿# 直连模式（游戏模式）下"不准联网"的程序名单
+# 安装时会复制成 sensitive-apps.txt，以后改那个文件就行（这个 example 是模板，别删）
+#
+# 一行一个程序：
+#   - 普通程序写完整路径，版本号这种会变的部分可以用 * 代替
+#   - %LOCALAPPDATA% %APPDATA% 这类环境变量会自动展开
+#   - 微软商店装的程序写成  appx:包名\程序在包里的相对路径
+#   - 电脑上没装的程序写了也没关系，会自动跳过
+# 以 # 开头的是注释。
+#
+# 切直连之前，名单里的程序必须全部关掉；直连期间，防火墙会封锁它们，就算打开了也连不了网。
+# 适合放进来的：登录着国外账号、一旦用中国 IP 连上去就可能出事的程序。
+
+# ---- AI 账号 ----
+%LOCALAPPDATA%\AnthropicClaude\app-*\claude.exe
+%APPDATA%\Claude\claude-code\*\*\claude.exe
+appx:OpenAI.Codex\app\ChatGPT.exe
+
+# ---- 浏览器（可能登录着各种国外账号）----
+C:\Program Files\Google\Chrome\Application\chrome.exe
+C:\Program Files (x86)\Google\Chrome\Application\chrome.exe
+%LOCALAPPDATA%\Google\Chrome\Application\chrome.exe
+C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe
+C:\Program Files\Mozilla Firefox\firefox.exe
+%LOCALAPPDATA%\Programs\UC浏览器\uc.exe
+%LOCALAPPDATA%\Programs\Quark\quark.exe
+
+# ---- 写代码 / 连服务器（插件和同步会连国外服务，需要的话去掉 # ）----
+# %LOCALAPPDATA%\Programs\Microsoft VS Code\Code.exe
+# %LOCALAPPDATA%\Programs\Termius\Termius.exe

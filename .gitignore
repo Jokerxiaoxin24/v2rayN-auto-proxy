@@ -1,0 +1,9 @@
+# 每台电脑自己的设置和运行时文件，不上传
+config.ps1
+sensitive-apps.txt
+mode.txt
+*.log
+avatar.png
+avatar.jpg
+avatar.jpeg
+*.bak.ps1
