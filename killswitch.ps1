@@ -22,8 +22,10 @@ if ($Mode -ne 'Status' -and -not (Test-Admin)) {
 }
 
 # 放行规则：不存在才建，所以重复运行不会越建越多
+# 只在自己的规则组里找：别的组里有同名规则（比如旧版留下的）不算数，不然会以为"已经有了"而不建
 function Ensure-Allow($name, [hashtable]$extra) {
-    if (-not (Get-NetFirewallRule -DisplayName $name -ErrorAction SilentlyContinue)) {
+    $mine = Get-NetFirewallRule -DisplayName $name -ErrorAction SilentlyContinue | Where-Object { $_.Group -eq $KsGroup }
+    if (-not $mine) {
         New-NetFirewallRule -DisplayName $name -Group $KsGroup -Direction Outbound -Action Allow @extra | Out-Null
         Write-Log "新建放行规则：$name"
     }
