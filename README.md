@@ -1,4 +1,4 @@
-# auto-proxy
+# v2rayN-auto-proxy
 
 给 Windows 上的 [v2rayN](https://github.com/2dust/v2rayN) 配的一套小工具：**开机自动挂上代理**、**桌面状态气泡**、**代理掉线时的断网保护**，还有打游戏用的**直连模式**。
 
