@@ -1,14 +1,16 @@
 ﻿# install.ps1 —— 一键安装
 # 做的事：找到 v2rayN → 生成 config.ps1 → 注册计划任务（开机自启 + 气泡右键菜单要用的几个）→ 马上启动
-# 重复运行也没关系（更新到新版本后再跑一次就行）
+# 重复运行也没关系：更新到新版本时，覆盖文件后再跑一次，会沿用之前的设置、不再提问
 #
 # 用法：右键「开始」按钮 →「终端(管理员)」，然后：
 #   cd 这个文件夹的路径
 #   powershell -ExecutionPolicy Bypass -File .\install.ps1
 # 也可以直接告诉它 v2rayN 在哪：
 #   powershell -ExecutionPolicy Bypass -File .\install.ps1 -V2rayNDir 'D:\v2rayN-windows-64'
+# 想重新回答那两个问题（v2rayN 位置、断网保护）：
+#   powershell -ExecutionPolicy Bypass -File .\install.ps1 -Reconfigure
 
-param([string]$V2rayNDir)
+param([string]$V2rayNDir, [switch]$Reconfigure)
 $dirArg = $V2rayNDir                  # 先存起来：下面 . common.ps1 会覆盖同名变量
 $here   = $PSScriptRoot
 . "$here\common.ps1"
@@ -44,7 +46,14 @@ function Find-V2rayN {
     return $null
 }
 
-if ($dirArg) {
+# 更新的时候（已经装过，config.ps1 里的 v2rayN 路径也还对）：沿用之前的设置，不再问
+$reuse = (-not $dirArg) -and (-not $Reconfigure) -and (Test-Path $ConfigFile) -and (Test-V2rayNDir $V2rayNDir)
+
+if ($reuse) {
+    $dir = $V2rayNDir
+    $ksDesc = if ($EnableKillSwitch) { '开机自动开启' } else { '不自动开启' }
+    Say "沿用之前的设置：v2rayN 在 $dir，断网保护$ksDesc（想重新设置就加 -Reconfigure）" Green
+} elseif ($dirArg) {
     $dir = $dirArg.Trim('"', ' ')
 } else {
     Say '正在找 v2rayN...'
@@ -64,12 +73,17 @@ if (-not (Test-V2rayNDir $dir)) {
 $dir = (Resolve-Path $dir).Path
 
 # ---- 3. 要不要断网保护 ----
-Say ''
-Say '断网保护：代理一掉线，就用防火墙拦住所有直连，防止用中国 IP 连上国外账号。' Cyan
-Say '  开着的时候，只有 v2rayN、走 TUN 的流量、局域网能联网；代理断了就整台电脑断网（这正是它的作用）。' Cyan
-Say '  需要临时直连时（比如登录校园网），右键气泡就能临时关掉。' Cyan
-$ks = Read-Host '开机自动开启断网保护吗？直接回车 = 开启，输入 n = 不开'
-$ksValue = if ($ks.Trim() -match '^[nN]') { '$false' } else { '$true' }
+if ($reuse) {
+    $ksValue = if ($EnableKillSwitch) { '$true' } else { '$false' }
+} else {
+    Say ''
+    Say '断网保护：代理一掉线，就用防火墙拦住所有直连，防止用中国 IP 连上国外账号。' Cyan
+    Say '  开着的时候，只有 v2rayN、走 TUN 的流量、局域网能联网；代理断了就整台电脑断网（这正是它的作用）。' Cyan
+    Say '  需要临时直连时（比如登录校园网），右键气泡就能临时关掉。' Cyan
+    $ks = Read-Host '开机自动开启断网保护吗？直接回车 = 开启，输入 n = 不开'
+    $ksValue = if ($ks.Trim() -match '^[nN]') { '$false' } else { '$true' }
+}
+$cuValue = if ($CheckUpdate) { '$true' } else { '$false' }      # 检查更新：沿用之前的（没设过就是开）
 
 # ---- 4. 写 config.ps1 ----
 $config = @"
@@ -81,6 +95,10 @@ $config = @"
 # 开机时自动打开断网保护（代理掉线时拦住直连，防止中国 IP 泄露）
 # 改成 `$false 就不自动开；之后也可以随时在气泡右键菜单里手动开关
 `$EnableKillSwitch = $ksValue
+
+# 每天联网查一次 GitHub 上有没有新版本（只弹通知提醒，不会自动下载安装）
+# 改成 `$false 就不查
+`$CheckUpdate = $cuValue
 "@
 [System.IO.File]::WriteAllText($ConfigFile, $config, (New-Object System.Text.UTF8Encoding $true))
 Say "已写入 $ConfigFile" Green
@@ -140,6 +158,6 @@ Start-Sleep -Seconds 2
 Start-ScheduledTask -TaskPath $TaskFolder -TaskName 'bubble'
 
 Say ''
-Say '装好了！右下角会出现气泡，几秒后弹出"代理已就绪"的通知。' Green
+Say "装好了（v$AppVersion）！右下角会出现气泡，几秒后弹出`"代理已就绪`"的通知。" Green
 Say '  · 想换头像：把一张图片命名为 avatar.png（或 avatar.jpg）放进这个文件夹'
 Say '  · 不想用了：用管理员终端运行 uninstall.ps1，会把防火墙和计划任务都恢复原样'

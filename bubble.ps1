@@ -120,6 +120,7 @@ $sparkH     = 46                     # 网速曲线的高度
                     </Grid>
 
                     <TextBlock Text="点一下气泡打开 ip.sb · 右键切换直连 / 断网保护 / 退出" Foreground="#6B7178" FontSize="10" Margin="0,12,0,0"/>
+                    <TextBlock x:Name="VersionText" Text="" Foreground="#6B7178" FontSize="10" Margin="0,3,0,0"/>
                 </StackPanel>
             </Border>
         </Popup>
@@ -152,6 +153,7 @@ $ksText     = $window.FindName('KsText')
 $leakText   = $window.FindName('LeakText')
 $totalText  = $window.FindName('TotalText')
 $sinceText  = $window.FindName('SinceText')
+$versionText = $window.FindName('VersionText')
 $panel.PlacementTarget = $ring
 
 # ---- 头像 ----
@@ -295,6 +297,12 @@ $modeItem.Add_Click({
     catch { [System.Windows.MessageBox]::Show("没找到计划任务 $($TaskFolder)mode-direct，是不是还没运行 install.ps1？`n`n$($_.Exception.Message)", '切到直连模式', 'OK', 'Error') | Out-Null }
 })
 [void]$menu.Items.Add($modeItem)
+
+# 有新版本时才出现：打开 GitHub 的发布页，让你自己看改了什么、决定要不要更新
+$updateItem = New-Object System.Windows.Controls.MenuItem
+$updateItem.Visibility = 'Collapsed'
+$updateItem.Add_Click({ Start-Process "https://github.com/$RepoSlug/releases/latest" })
+[void]$menu.Items.Add($updateItem)
 [void]$menu.Items.Add((New-Object System.Windows.Controls.Separator))
 $exitItem = New-Object System.Windows.Controls.MenuItem
 $exitItem.Header = '退出气泡'
@@ -311,6 +319,12 @@ $window.Add_ContextMenuOpening({
     } else {
         $modeItem.Header     = '🎮 切到直连模式（打游戏）'
         $ksItem.Visibility   = 'Visible'
+    }
+    if ($script:updateVersion) {
+        $updateItem.Header     = "⬆ 查看新版本 $($script:updateVersion)（你现在是 v$AppVersion）"
+        $updateItem.Visibility = 'Visible'
+    } else {
+        $updateItem.Visibility = 'Collapsed'
     }
 })
 
@@ -538,6 +552,20 @@ $countryNames = @{
     CN = '中国'; RU = '俄罗斯'; AU = '澳大利亚'; NL = '荷兰'
 }
 
+# ---- 检查更新：每天问一次 GitHub 最新发布的版本，只提醒、不自动安装 ----
+# 为什么不自动安装：这套脚本是以管理员身份运行的，要是哪天仓库被人动了手脚，自动更新会把坏代码直接装到所有人电脑上
+$updHandler = New-Object System.Net.Http.HttpClientHandler
+$updHandler.Proxy    = New-Object System.Net.WebProxy("http://127.0.0.1:$V2Port")
+$updHandler.UseProxy = $true
+$httpUpdate = [System.Net.Http.HttpClient]::new($updHandler)
+$httpUpdate.Timeout = [TimeSpan]::FromSeconds(15)
+$httpUpdate.DefaultRequestHeaders.UserAgent.ParseAdd("$AppName/$AppVersion")   # GitHub 的接口要求必须带 User-Agent
+$updateApi       = "https://api.github.com/repos/$RepoSlug/releases/latest"
+$updateTask      = $null
+$updateCountdown = 60      # 启动 1 分钟后查第一次（开机时代理可能还没好）
+$updateVersion   = $null   # 发现的新版本号（比如 v1.1.0），没有新版本就是 $null
+$updateNotified  = $null   # 这个版本已经弹过通知了，同一次运行里不重复弹
+
 $ipTask      = $null
 $ipCountdown = 0           # 0 = 一启动就查
 $locLine     = '出口查询中...'
@@ -545,6 +573,13 @@ $ipLine      = '--'
 
 # ---- 把最新数据画到面板上（只在面板开着时调用，省得白算）----
 function Update-Panel {
+    # 最底下一行：版本号；有新版本时变成黄色提示
+    if ($script:updateVersion) {
+        $versionText.Text = "v$AppVersion · 有新版本 $($script:updateVersion)，右键气泡查看"
+        $versionText.Foreground = New-Object System.Windows.Media.SolidColorBrush ([System.Windows.Media.ColorConverter]::ConvertFromString('#FFC107'))
+    } else {
+        $versionText.Text = "v$AppVersion"
+    }
     if ($script:appMode -eq 'direct') {
         $statusText.Text = '🎮 直连模式（打游戏）'
         $statusDot.Fill  = New-Object System.Windows.Media.SolidColorBrush ([System.Windows.Media.ColorConverter]::ConvertFromString('#42A5F5'))
@@ -773,7 +808,36 @@ $timer.Add_Tick({
         $script:leakCountdown = 20
     }
 
-    # ⑦ 刷新外观；面板开着才刷新面板
+    # ⑦ 检查更新：每天一次（直连模式在上面就 return 了，不会查）
+    if ($CheckUpdate) {
+        if ($script:updateTask -eq $null) {
+            $script:updateCountdown--
+            if ($script:updateCountdown -le 0) {
+                $script:updateTask = $httpUpdate.GetStringAsync($updateApi)
+            }
+        } elseif ($script:updateTask.IsCompleted) {
+            $script:updateCountdown = 3600                               # 没查到（代理断了、还没发布过版本）：1 小时后再试
+            if ($script:updateTask.Status -eq 'RanToCompletion') {
+                $script:updateCountdown = 86400                          # 查到了：明天再查
+                try {
+                    $tag    = ($script:updateTask.Result | ConvertFrom-Json).tag_name
+                    $latest = [version]($tag -replace '^[vV]', '')       # "v1.1.0" → 1.1.0，[version] 会按数字比大小（1.10 > 1.9）
+                    if ($latest -gt [version]$AppVersion) {
+                        $script:updateVersion = $tag
+                        if ($script:updateNotified -ne $tag) {
+                            Show-Toast "有新版本 $tag ⬆" "你现在是 v$AppVersion。右键气泡 →「查看新版本」，看看改了什么再决定要不要更新"
+                            $script:updateNotified = $tag
+                        }
+                    } else {
+                        $script:updateVersion = $null
+                    }
+                } catch { }                                              # 版本号格式看不懂就当没有
+            }
+            $script:updateTask = $null
+        }
+    }
+
+    # ⑧ 刷新外观；面板开着才刷新面板
     Update-Ring
     if ($panel.IsOpen) { Update-Panel }
 })

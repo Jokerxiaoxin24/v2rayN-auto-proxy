@@ -1,6 +1,10 @@
 ﻿# common.ps1 —— 几个脚本共用的设置和工具函数
 # 别的脚本开头都会 . "$PSScriptRoot\common.ps1"，把这里的变量和函数"贴"进去
 
+# ---- 版本：发新版时改这里（跟 GitHub Releases 上的版本号对应，比如 v1.1.0 就写 1.1.0）----
+$AppVersion = '1.0.0'
+$RepoSlug   = 'Jokerxiaoxin24/v2rayN-auto-proxy'     # 去哪个 GitHub 仓库查新版本
+
 # ---- 名字：计划任务文件夹、防火墙规则组 ----
 $AppName    = 'auto-proxy'
 $TaskFolder = "\$AppName\"                 # 计划任务都放在任务计划程序的这个文件夹里
@@ -12,6 +16,7 @@ $ModeFile   = Join-Path $PSScriptRoot 'mode.txt'
 # ---- 读配置：install.ps1 会生成 config.ps1，里面写着 v2rayN 装在哪 ----
 $V2rayNDir        = $null
 $EnableKillSwitch = $true                  # 开机时自动打开断网保护（config.ps1 里可以关掉）
+$CheckUpdate      = $true                  # 每天查一次有没有新版本，只提醒不安装（config.ps1 里可以关掉）
 $ConfigFile = Join-Path $PSScriptRoot 'config.ps1'
 if (Test-Path $ConfigFile) { . $ConfigFile }
 $V2rayNExe  = if ($V2rayNDir) { Join-Path $V2rayNDir 'v2rayN.exe' } else { $null }
