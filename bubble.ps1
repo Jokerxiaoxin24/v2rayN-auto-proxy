@@ -159,6 +159,21 @@ $sinceText  = $window.FindName('SinceText')
 $versionText = $window.FindName('VersionText')
 $panel.PlacementTarget = $ring
 
+# 让面板窗口对鼠标"透明"（鼠标直接穿过去）：面板只用来看，不需要点。
+# 面板四周有一圈画阴影用的透明边，会盖住气泡边缘一小条；不透明的话，鼠标停在那一条上就会
+# "进了面板 = 离开了气泡" → 面板收起 → 又回到气泡 → 面板打开……来回闪。
+Add-Type -Namespace Native -Name Win -MemberDefinition @'
+[DllImport("user32.dll")] public static extern int GetWindowLong(IntPtr h, int i);
+[DllImport("user32.dll")] public static extern int SetWindowLong(IntPtr h, int i, int v);
+'@
+$panel.Add_Opened({
+    $src = [System.Windows.PresentationSource]::FromVisual($panel.Child)    # 面板是一个单独的小窗口，拿到它的句柄
+    if ($src) {
+        $ex = [Native.Win]::GetWindowLong($src.Handle, -20)                    # -20 = 扩展样式
+        [void][Native.Win]::SetWindowLong($src.Handle, -20, ($ex -bor 0x20 -bor 0x80000))   # 0x20 = 鼠标穿透，0x80000 = 分层窗口
+    }
+})
+
 # ---- 头像 ----
 $avatarFile = Get-AvatarFile
 if ($avatarFile) {
