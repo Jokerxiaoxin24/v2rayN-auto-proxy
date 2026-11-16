@@ -84,6 +84,7 @@ if ($reuse) {
     $ksValue = if ($ks.Trim() -match '^[nN]') { '$false' } else { '$true' }
 }
 $cuValue = if ($CheckUpdate) { '$true' } else { '$false' }      # 检查更新：沿用之前的（没设过就是开）
+$dpValue = if ($DirectProxyApps) { '$true' } else { '$false' }  # 直连时名单程序走代理：沿用之前的（没设过就是关）
 
 # ---- 4. 写 config.ps1 ----
 $config = @"
@@ -99,6 +100,12 @@ $config = @"
 # 每天联网查一次 GitHub 上有没有新版本（只弹通知提醒，不会自动下载安装）
 # 改成 `$false 就不查
 `$CheckUpdate = $cuValue
+
+# 直连模式（打游戏）下，名单里的程序（浏览器、AI 客户端等）怎么办：
+#   `$false = 必须先关掉，直连期间被防火墙封锁，打开了也连不上网（默认，最严格）
+#   `$true  = 不用关，照常走代理（代理断了它们就断网，不会漏出中国 IP），游戏照样直连
+#            代价：名单里不走系统代理、也没设代理环境变量（HTTPS_PROXY）的程序，直连期间连不上网
+`$DirectProxyApps = $dpValue
 "@
 [System.IO.File]::WriteAllText($ConfigFile, $config, (New-Object System.Text.UTF8Encoding $true))
 Say "已写入 $ConfigFile" Green

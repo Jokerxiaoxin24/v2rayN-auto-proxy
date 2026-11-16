@@ -38,5 +38,15 @@ Write-Log '已卸载'
 
 if (Test-Path $ModeFile) { Remove-Item $ModeFile }
 
+# 4. 在"直连 + 名单程序走代理"模式下卸载的话，v2rayN 的 TUN 还是关着的：改回打开
+if (Test-Path $TunRestoreFile) {
+    $wasRunning = [bool](Get-Process v2rayN -ErrorAction SilentlyContinue)
+    Stop-V2rayN
+    Set-V2rayNTun $true
+    Remove-Item $TunRestoreFile
+    if ($wasRunning) { Start-Process -FilePath $V2rayNExe -WorkingDirectory $V2rayNDir }
+    Write-Host '已把 v2rayN 的 TUN 改回打开'
+}
+
 Write-Host ''
 Write-Host '卸载完成。这个文件夹现在可以直接删掉了。' -ForegroundColor Green

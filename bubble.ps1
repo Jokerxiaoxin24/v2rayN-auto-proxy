@@ -265,12 +265,13 @@ $ksItem.Add_Click({
 # 模式切换：代理 ⇄ 直连（打游戏）
 $modeItem = New-Object System.Windows.Controls.MenuItem
 $modeItem.Add_Click({
-    if ($script:appMode -eq 'direct') {
+    if ($script:appMode -like 'direct*') {
         Start-ScheduledTask -TaskPath $TaskFolder -TaskName 'mode-proxy' -ErrorAction SilentlyContinue
         return
     }
-    # ① 名单里的程序必须先全部关掉
-    $running = Get-RunningSensitive
+    # ① 最严格那档（默认）：名单里的程序必须先全部关掉；"名单程序走代理"那档不用关
+    $running = @()
+    if (-not $DirectProxyApps) { $running = Get-RunningSensitive }
     if ($running.Count -gt 0) {
         $list = ($running | Group-Object ProcessName | ForEach-Object { "  • $($_.Name)（$($_.Count) 个进程）" }) -join "`n"
         $msg = "切到直连之前，这些程序要先关掉：`n`n$list`n`n" +
@@ -289,11 +290,21 @@ $modeItem.Add_Click({
         }
     }
     # ② 再确认一次
-    $msg = "切到直连后：`n`n" +
-           "  • v2rayN 会退出，所有流量走你自己的网络（游戏延迟更低）`n" +
-           "  • 名单里的程序会被防火墙封锁，就算打开了也连不了网`n" +
-           "  • 断网保护暂停`n`n" +
-           "打完游戏记得右键气泡切回代理（重启电脑也会自动切回）。确定切换吗？"
+    if ($DirectProxyApps) {
+        $msg = "切到直连后：`n`n" +
+               "  • v2rayN 关掉 TUN 后重启，游戏走你自己的网络（延迟更低）`n" +
+               "  • 名单里的程序（浏览器等）不用关，照常走代理；代理断了它们就断网，不会漏出中国 IP`n" +
+               "  • 名单里不走系统代理、也没设代理环境变量的程序，直连期间会连不上网`n" +
+               "  • 断网保护暂停`n`n" +
+               "打完游戏记得右键气泡切回代理（重启电脑也会自动切回）。确定切换吗？"
+    } else {
+        $msg = "切到直连后：`n`n" +
+               "  • v2rayN 会退出，所有流量走你自己的网络（游戏延迟更低）`n" +
+               "  • 名单里的程序会被防火墙封锁，就算打开了也连不了网`n" +
+               "  • 断网保护暂停`n`n" +
+               "打完游戏记得右键气泡切回代理（重启电脑也会自动切回）。确定切换吗？`n`n" +
+               "（想在直连时也能用浏览器：把 config.ps1 里的 `$DirectProxyApps 改成 `$true）"
+    }
     $ans = [System.Windows.MessageBox]::Show($msg, '切到直连模式', 'YesNo', 'Warning')
     if ($ans -ne 'Yes') { return }
     try { Start-ScheduledTask -TaskPath $TaskFolder -TaskName 'mode-direct' -ErrorAction Stop }
@@ -316,7 +327,7 @@ $window.Add_ContextMenuOpening({
     $panel.IsOpen = $false
     if ($script:ksOn) { $ksItem.Header = '断网保护：开启中 ✓（点击临时关闭）' }
     else              { $ksItem.Header = '断网保护：已关闭 ⚠（点击开启）' }
-    if ($script:appMode -eq 'direct') {
+    if ($script:appMode -like 'direct*') {
         $modeItem.Header     = '🛡 切回代理模式'
         $ksItem.Visibility   = 'Collapsed'          # 直连模式下保护本来就是暂停的，不显示这个开关
     } else {
@@ -469,7 +480,7 @@ function Get-RunningSensitive {
 function Enter-Mode($m) {
     $script:appMode       = $m
     $script:modeChangedAt = Get-Date
-    if ($m -eq 'direct') {
+    if ($m -like 'direct*') {
         $script:sensitiveNames = Get-SensitiveNames
         $script:sensitiveSeen  = @()
         $script:watchCountdown = 0
@@ -530,7 +541,7 @@ function Set-NetState($newState, $reason) {
 
 # 根据当前所有状态，决定外圈颜色、胶囊文字、要不要呼吸（危险程度从高到低判断）
 function Update-Ring {
-    if ($script:appMode -eq 'direct') {
+    if ($script:appMode -like 'direct*') {
         # 直连模式：蓝色实线，安安静静，不呼吸
         $label.Text = '直连'; Set-RingColor '#42A5F5'
         $ring.StrokeDashArray = $null
@@ -600,17 +611,23 @@ function Update-Panel {
     } else {
         $versionText.Text = "v$AppVersion"
     }
-    if ($script:appMode -eq 'direct') {
+    if ($script:appMode -like 'direct*') {
         $statusText.Text = '🎮 直连模式（打游戏）'
         $statusDot.Fill  = New-Object System.Windows.Media.SolidColorBrush ([System.Windows.Media.ColorConverter]::ConvertFromString('#42A5F5'))
-        $locText.Text    = '不走代理'
         $downText.Text   = '--'; $upText.Text = '--'
         $delayText.Text  = '直连不测'
         $warmText.Text   = '直连不测'
-        $ipText.Text     = '你自己的网络'
+        $ipText.Text     = '游戏用你自己的网络'
         $ksText.Text     = '暂停（直连模式）'
-        if ($script:sensitiveSeen.Count -gt 0) { $leakText.Text = "⚠ $($script:sensitiveSeen -join '、') 开着（已封锁）" }
-        else                                   { $leakText.Text = "名单里 $($script:sensitiveNames.Count) 个程序已封锁 ✓" }
+        if ($script:appMode -eq 'direct-proxy') {
+            # "名单程序走代理"那档：名单程序还开着也没关系，它们只能走代理
+            $locText.Text  = '名单程序走代理'
+            $leakText.Text = "名单里 $($script:sensitiveNames.Count) 个程序只能走代理 ✓"
+        } else {
+            $locText.Text  = '不走代理'
+            if ($script:sensitiveSeen.Count -gt 0) { $leakText.Text = "⚠ $($script:sensitiveSeen -join '、') 开着（已封锁）" }
+            else                                   { $leakText.Text = "名单里 $($script:sensitiveNames.Count) 个程序已封锁 ✓" }
+        }
         $totalText.Text  = "↓ $(Format-Bytes $script:sessionDown)    ↑ $(Format-Bytes $script:sessionUp)"
         $sinceText.Text  = "已直连 $(Format-Duration ((Get-Date) - $script:modeChangedAt))"
         $sparkCap.Text   = '直连模式下不统计网速'
@@ -674,9 +691,9 @@ $timer.Add_Tick({
     $m = 'proxy'
     try { $m = [System.IO.File]::ReadAllText($ModeFile).Trim() } catch { }
     if ($m -ne $script:appMode) { Enter-Mode $m }
-    if ($script:appMode -eq 'direct') {
-        # 直连模式：不测代理、不报掉线，只盯着名单里的程序有没有被打开
-        Watch-Sensitive
+    if ($script:appMode -like 'direct*') {
+        # 直连模式：不测代理、不报掉线；最严格那档还要盯着名单里的程序有没有被打开
+        if ($script:appMode -eq 'direct') { Watch-Sensitive }
         Update-Ring
         if ($panel.IsOpen) { Update-Panel }
         return
@@ -820,7 +837,8 @@ $timer.Add_Tick({
     } elseif ($script:leakTask -eq $null) {
         $script:leakCountdown--
         if ($script:leakCountdown -le 0) {
-            $script:leakTask = $http.GetStringAsync('https://1.1.1.1/cdn-cgi/trace')
+            # 用域名不用 1.1.1.1：有些宽带（比如移动）直连 1.1.1.1 根本不通，真漏了也只会显示"连不上"，报不出 CN
+            $script:leakTask = $http.GetStringAsync('https://www.cloudflare.com/cdn-cgi/trace')
         }
     }
     if ($script:leakTask -ne $null -and $script:leakTask.IsCompleted) {

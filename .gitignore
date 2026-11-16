@@ -2,6 +2,7 @@
 config.ps1
 sensitive-apps.txt
 mode.txt
+tun-restore.txt
 *.log
 avatar.png
 avatar.jpg

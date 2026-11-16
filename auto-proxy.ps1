@@ -15,6 +15,12 @@ if (-not $v2rayPath -or -not (Test-Path $v2rayPath)) {
 # 先把门关上再开代理：开机这几秒里，谁都别想用中国 IP 直连出去
 # （就算上次临时关掉了保护，每次开机也会自动重新打开；不想要的话在 config.ps1 里把 $EnableKillSwitch 改成 $false）
 if ($EnableKillSwitch) { & "$PSScriptRoot\killswitch.ps1" -Mode On | Out-Null }
+# 上次是"直连 + 名单程序走代理"的话，v2rayN 的 TUN 是被临时关掉的：先关掉 v2rayN、把 TUN 打开，下面 Stage 1 再启动它
+if (Test-Path $TunRestoreFile) {
+    Stop-V2rayN
+    Set-V2rayNTun $true
+    Remove-Item $TunRestoreFile
+}
 # 保护开好以后，再拆掉直连模式留下的封锁规则，并记下"现在是代理模式"
 # （顺序不能反：先拆封锁再开保护的话，中间会有一小段谁都能直连的空档）
 Remove-NetFirewallRule -Group $BlockGroup -ErrorAction SilentlyContinue

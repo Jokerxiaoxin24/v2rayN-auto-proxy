@@ -17,6 +17,7 @@ $ModeFile   = Join-Path $PSScriptRoot 'mode.txt'
 $V2rayNDir        = $null
 $EnableKillSwitch = $true                  # 开机时自动打开断网保护（config.ps1 里可以关掉）
 $CheckUpdate      = $true                  # 每天查一次有没有新版本，只提醒不安装（config.ps1 里可以关掉）
+$DirectProxyApps  = $false                 # 直连模式下名单程序（浏览器等）继续走代理？默认不（必须先关、直连期间封锁）
 $ConfigFile = Join-Path $PSScriptRoot 'config.ps1'
 if (Test-Path $ConfigFile) { . $ConfigFile }
 $V2rayNExe  = if ($V2rayNDir) { Join-Path $V2rayNDir 'v2rayN.exe' } else { $null }
@@ -41,6 +42,31 @@ $ApiPort   = $V2Port + 6
 # v2rayN 用 sing-box 开 TUN 时，网卡名字和地址段是固定的
 $TunName = 'singbox_tun'
 $TunNet  = '172.18.0.0/30'
+
+# ---- 控制 v2rayN（直连模式"名单程序走代理"那一档要用）----
+# 有这个文件 = v2rayN 的 TUN 是我们临时关掉的，回到代理模式时要重新打开
+$TunRestoreFile = Join-Path $PSScriptRoot 'tun-restore.txt'
+
+# 关掉 v2rayN 和它的核心，等它们真的退出（强制结束，v2rayN 来不及把设置写回文件）
+function Stop-V2rayN {
+    Get-Process -Name v2rayN, xray, sing-box, mihomo -ErrorAction SilentlyContinue | Stop-Process -Force
+    $sw = [Diagnostics.Stopwatch]::StartNew()
+    while ((Get-Process -Name v2rayN, xray, sing-box, mihomo -ErrorAction SilentlyContinue) -and $sw.ElapsedMilliseconds -lt 5000) {
+        Start-Sleep -Milliseconds 200
+    }
+}
+
+# 改 v2rayN 设置里的"启用 Tun"开关。v2rayN 必须先关掉，不然它退出时会把旧设置写回去
+# 只替换 "EnableTun": true/false 这一处，文件其他内容一个字节都不动
+function Set-V2rayNTun([bool]$on) {
+    $file   = Join-Path $V2rayNDir 'guiConfigs\guiNConfig.json'
+    $bytes  = [System.IO.File]::ReadAllBytes($file)
+    $hasBom = $bytes.Length -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF
+    $text   = [System.IO.File]::ReadAllText($file)
+    $value  = if ($on) { 'true' } else { 'false' }
+    $new    = [regex]::Replace($text, '("EnableTun"\s*:\s*)(true|false)', "`${1}$value")
+    if ($new -ne $text) { [System.IO.File]::WriteAllText($file, $new, (New-Object System.Text.UTF8Encoding $hasBom)) }
+}
 
 # ---- 小工具 ----
 # 往日志里记一行（断网保护、切模式这些重要操作都记一笔，出问题时好查）
