@@ -103,20 +103,22 @@ $sparkH     = 46                     # 网速曲线的高度
                             <ColumnDefinition Width="*"/>
                         </Grid.ColumnDefinitions>
                         <Grid.RowDefinitions>
-                            <RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/>
+                            <RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/>
                         </Grid.RowDefinitions>
-                        <TextBlock Grid.Row="0" Grid.Column="0" Text="延迟"     Foreground="#9AA0A6" FontSize="12" Margin="0,2"/>
-                        <TextBlock Grid.Row="1" Grid.Column="0" Text="出口 IP"  Foreground="#9AA0A6" FontSize="12" Margin="0,2"/>
-                        <TextBlock Grid.Row="2" Grid.Column="0" Text="断网保护" Foreground="#9AA0A6" FontSize="12" Margin="0,2"/>
-                        <TextBlock Grid.Row="3" Grid.Column="0" Text="直连检测" Foreground="#9AA0A6" FontSize="12" Margin="0,2"/>
-                        <TextBlock Grid.Row="4" Grid.Column="0" Text="本次流量" Foreground="#9AA0A6" FontSize="12" Margin="0,2"/>
-                        <TextBlock Grid.Row="5" Grid.Column="0" Text="持续"     Foreground="#9AA0A6" FontSize="12" Margin="0,2"/>
+                        <TextBlock Grid.Row="0" Grid.Column="0" Text="新建连接" Foreground="#9AA0A6" FontSize="12" Margin="0,2"/>
+                        <TextBlock Grid.Row="1" Grid.Column="0" Text="复用连接" Foreground="#9AA0A6" FontSize="12" Margin="0,2"/>
+                        <TextBlock Grid.Row="2" Grid.Column="0" Text="出口 IP"  Foreground="#9AA0A6" FontSize="12" Margin="0,2"/>
+                        <TextBlock Grid.Row="3" Grid.Column="0" Text="断网保护" Foreground="#9AA0A6" FontSize="12" Margin="0,2"/>
+                        <TextBlock Grid.Row="4" Grid.Column="0" Text="直连检测" Foreground="#9AA0A6" FontSize="12" Margin="0,2"/>
+                        <TextBlock Grid.Row="5" Grid.Column="0" Text="本次流量" Foreground="#9AA0A6" FontSize="12" Margin="0,2"/>
+                        <TextBlock Grid.Row="6" Grid.Column="0" Text="持续"     Foreground="#9AA0A6" FontSize="12" Margin="0,2"/>
                         <TextBlock x:Name="DelayText" Grid.Row="0" Grid.Column="1" Text="--" Foreground="#EEEEEE" FontSize="12" Margin="0,2"/>
-                        <TextBlock x:Name="IpText"    Grid.Row="1" Grid.Column="1" Text="--" Foreground="#EEEEEE" FontSize="12" Margin="0,2"/>
-                        <TextBlock x:Name="KsText"    Grid.Row="2" Grid.Column="1" Text="--" Foreground="#EEEEEE" FontSize="12" Margin="0,2" TextWrapping="Wrap"/>
-                        <TextBlock x:Name="LeakText"  Grid.Row="3" Grid.Column="1" Text="--" Foreground="#EEEEEE" FontSize="12" Margin="0,2" TextWrapping="Wrap"/>
-                        <TextBlock x:Name="TotalText" Grid.Row="4" Grid.Column="1" Text="--" Foreground="#EEEEEE" FontSize="12" Margin="0,2"/>
-                        <TextBlock x:Name="SinceText" Grid.Row="5" Grid.Column="1" Text="--" Foreground="#EEEEEE" FontSize="12" Margin="0,2"/>
+                        <TextBlock x:Name="WarmText"  Grid.Row="1" Grid.Column="1" Text="--" Foreground="#EEEEEE" FontSize="12" Margin="0,2"/>
+                        <TextBlock x:Name="IpText"    Grid.Row="2" Grid.Column="1" Text="--" Foreground="#EEEEEE" FontSize="12" Margin="0,2"/>
+                        <TextBlock x:Name="KsText"    Grid.Row="3" Grid.Column="1" Text="--" Foreground="#EEEEEE" FontSize="12" Margin="0,2" TextWrapping="Wrap"/>
+                        <TextBlock x:Name="LeakText"  Grid.Row="4" Grid.Column="1" Text="--" Foreground="#EEEEEE" FontSize="12" Margin="0,2" TextWrapping="Wrap"/>
+                        <TextBlock x:Name="TotalText" Grid.Row="5" Grid.Column="1" Text="--" Foreground="#EEEEEE" FontSize="12" Margin="0,2"/>
+                        <TextBlock x:Name="SinceText" Grid.Row="6" Grid.Column="1" Text="--" Foreground="#EEEEEE" FontSize="12" Margin="0,2"/>
                     </Grid>
 
                     <TextBlock Text="点一下气泡打开 ip.sb · 右键切换直连 / 断网保护 / 退出" Foreground="#6B7178" FontSize="10" Margin="0,12,0,0"/>
@@ -148,6 +150,7 @@ $spark      = $window.FindName('Spark')
 $sparkFill  = $window.FindName('SparkFill')
 $sparkCap   = $window.FindName('SparkCaption')
 $delayText  = $window.FindName('DelayText')
+$warmText   = $window.FindName('WarmText')
 $ipText     = $window.FindName('IpText')
 $ksText     = $window.FindName('KsText')
 $leakText   = $window.FindName('LeakText')
@@ -384,6 +387,13 @@ public static class DelayProbe {
         }
         return sw.ElapsedMilliseconds;
     }
+    // 复用连接的延迟：先请求一次把连接建好（不计时），再在同一条连接上计时第二次
+    public static async Task<long> MeasureWarm(HttpClient client, string url) {
+        using (var first = await client.GetAsync(url, HttpCompletionOption.ResponseHeadersRead).ConfigureAwait(false)) {
+            first.EnsureSuccessStatusCode();
+        }
+        return await Measure(client, url).ConfigureAwait(false);
+    }
 }
 '@
 $probeHandler = New-Object System.Net.Http.HttpClientHandler
@@ -391,7 +401,17 @@ $probeHandler.Proxy    = New-Object System.Net.WebProxy("http://127.0.0.1:$V2Por
 $probeHandler.UseProxy = $true
 $httpProbe = [System.Net.Http.HttpClient]::new($probeHandler)
 $httpProbe.Timeout = [TimeSpan]::FromSeconds(6)
-$httpProbe.DefaultRequestHeaders.ConnectionClose = $true    # 每次都新建连接，测出来的才是真实延迟
+$httpProbe.DefaultRequestHeaders.ConnectionClose = $true    # 每次都新建连接，跟 sing-box 的测法一样（"新建连接"延迟）
+
+# 复用连接的延迟（跟 v2rayN 列表里的数字接近）：连接保持不断，只算一个来回。只用来显示，不影响掉线判断
+$warmHandler = New-Object System.Net.Http.HttpClientHandler
+$warmHandler.Proxy    = New-Object System.Net.WebProxy("http://127.0.0.1:$V2Port")
+$warmHandler.UseProxy = $true
+$httpWarm = [System.Net.Http.HttpClient]::new($warmHandler)
+$httpWarm.Timeout = [TimeSpan]::FromSeconds(6)
+$warmTask      = $null
+$warmCountdown = 5         # 启动 5 秒后测第一次，之后每 10 秒一次
+$warmMs        = $null
 
 $delayTask      = $null    # 正在进行的那次测试（"订单号"），没有就是 $null
 $delayKind      = 'api'    # 这次是谁测的：api = sing-box 测的，self = 自己测的
@@ -457,7 +477,7 @@ function Enter-Mode($m) {
         # 刚切回代理：v2rayN 正在启动，重置所有状态，并给 30 秒宽限期
         $script:startedAt   = Get-Date
         $script:netState    = 'unknown'; $script:stateSince = Get-Date
-        $script:failStreak  = 0; $script:lastMs = $null
+        $script:failStreak  = 0; $script:lastMs = $null; $script:warmMs = $null; $script:warmCountdown = 5
         $script:missingSecs = 0; $script:tunGoneSecs = 0
         $script:leakCN      = $false
         $script:lastUp      = -1; $script:lastDown = -1
@@ -586,6 +606,7 @@ function Update-Panel {
         $locText.Text    = '不走代理'
         $downText.Text   = '--'; $upText.Text = '--'
         $delayText.Text  = '直连不测'
+        $warmText.Text   = '直连不测'
         $ipText.Text     = '你自己的网络'
         $ksText.Text     = '暂停（直连模式）'
         if ($script:sensitiveSeen.Count -gt 0) { $leakText.Text = "⚠ $($script:sensitiveSeen -join '、') 开着（已封锁）" }
@@ -612,8 +633,10 @@ function Update-Panel {
     $downText.Text = Format-Speed $script:downRate
     $upText.Text   = Format-Speed $script:upRate
 
-    if ($script:lastMs -ne $null) { $delayText.Text = "$($script:lastMs) 毫秒" }
+    if ($script:lastMs -ne $null) { $delayText.Text = "$($script:lastMs) 毫秒 · 打开新网站时" }
     else                          { $delayText.Text = "测不通（连续 $($script:failStreak) 次）" }
+    if ($script:warmMs -ne $null) { $warmText.Text  = "$($script:warmMs) 毫秒 · 连上以后" }
+    else                          { $warmText.Text  = '--' }
     $ipText.Text = $script:ipLine
     if ($script:ksOn)              { $ksText.Text = '开启 ✓  代理断了也漏不出去' }
     elseif ($script:ksOn -eq $false) { $ksText.Text = '已关闭 ⚠  掉线时会直连' }
@@ -751,6 +774,19 @@ $timer.Add_Tick({
         # 出问题时 4 秒就再测一次，好尽快发现恢复；正常时 8 秒
         if ($script:netState -eq 'down' -or $script:failStreak -gt 0) { $script:delayCountdown = 4 }
         else { $script:delayCountdown = 8 }
+    }
+
+    # ③b 复用连接的延迟：每 10 秒测一次，只用来显示
+    if ($script:warmTask -eq $null) {
+        $script:warmCountdown--
+        if ($script:warmCountdown -le 0) {
+            $script:warmTask = [DelayProbe]::MeasureWarm($httpWarm, $testUrl)
+        }
+    } elseif ($script:warmTask.IsCompleted) {
+        if ($script:warmTask.Status -eq 'RanToCompletion') { $script:warmMs = $script:warmTask.Result }
+        else                                               { $script:warmMs = $null }
+        $script:warmTask = $null
+        $script:warmCountdown = 10
     }
 
     # ④ 出口 IP：倒计时到了就"下单"

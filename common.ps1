@@ -2,7 +2,7 @@
 # 别的脚本开头都会 . "$PSScriptRoot\common.ps1"，把这里的变量和函数"贴"进去
 
 # ---- 版本：发新版时改这里（跟 GitHub Releases 上的版本号对应，比如 v1.1.0 就写 1.1.0）----
-$AppVersion = '1.0.0'
+$AppVersion = '1.1.0'
 $RepoSlug   = 'Jokerxiaoxin24/v2rayN-auto-proxy'     # 去哪个 GitHub 仓库查新版本
 
 # ---- 名字：计划任务文件夹、防火墙规则组 ----
