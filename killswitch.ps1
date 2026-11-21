@@ -1,8 +1,9 @@
 ﻿# killswitch.ps1 —— 断网保护（kill switch）
-# 思路：防火墙"出站默认拦截"，只放行三种流量：
+# 思路：防火墙"出站默认拦截"，只放行四种流量：
 #   ① 从 TUN 网卡出去的（代理正常时，所有程序都走这里）
 #   ② 去局域网的（路由器后台、局域网联机，不算"出国"）
 #   ③ v2rayN 和它的核心程序（它们本来就要从 Wi-Fi 去连节点）
+#   ④ DHCP（连上 Wi-Fi 后向路由器"要 IP 地址"，不放行的话换网络、开机晚联网都会要不到地址）
 # 代理一断、TUN 一没，程序的流量只能从 Wi-Fi 直接出去 → 不在放行名单里 → 被拦下，中国 IP 漏不出去。
 # （本机内部的 127.0.0.1 不受防火墙管，所以走系统代理的程序也不受影响）
 #
@@ -41,6 +42,11 @@ switch ($Mode) {
         }
         Ensure-Allow '断网保护 - 放行 TUN'    @{ LocalAddress  = $TunNet }
         Ensure-Allow '断网保护 - 放行局域网'  @{ RemoteAddress = 'LocalSubnet' }
+        # DHCP：Windows 自带的"核心网络 - DHCP-Out"规则有时会被删掉（这台电脑就是），所以自己放行一份。
+        # 要地址的广播从 0.0.0.0 发往 255.255.255.255，学校这种 DHCP 服务器还常在别的网段，"局域网"那条管不到。
+        # DHCP 只在本地网络里要地址，带不走任何上网数据，不会漏 IP
+        Ensure-Allow '断网保护 - 放行 DHCP'   @{ Protocol = 'UDP'; LocalPort = 68;  RemotePort = 67 }
+        Ensure-Allow '断网保护 - 放行 DHCPv6' @{ Protocol = 'UDP'; LocalPort = 546; RemotePort = 547 }
         # v2rayN 本体 + bin 文件夹里所有的核心（xray、sing-box、mihomo……v2rayN 更新后多出来的也会自动补上）
         $exes = @(Get-Item $V2rayNExe) + @(Get-ChildItem (Join-Path $V2rayNDir 'bin') -Recurse -Filter *.exe -ErrorAction SilentlyContinue)
         foreach ($exe in $exes) {

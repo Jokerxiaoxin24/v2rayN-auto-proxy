@@ -120,6 +120,7 @@ powershell -ExecutionPolicy Bypass -File .\uninstall.ps1
 平时：程序 ──> TUN 网卡 ──> sing-box/xray ──> 节点        ✓ 放行（TUN 的地址段 172.18.0.0/30）
       v2rayN / xray / sing-box ──> 节点                  ✓ 放行（按程序路径）
       程序 ──> 路由器、局域网设备                           ✓ 放行（LocalSubnet）
+      连上 Wi-Fi 后找路由器要 IP 地址（DHCP）               ✓ 放行（UDP 68→67、546→547）
 
 掉线：程序 ──> Wi-Fi 网卡 ──> 国外网站（用的是国内 IP）     ✗ 出站默认拦截
 ```
